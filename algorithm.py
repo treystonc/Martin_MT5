@@ -4,9 +4,9 @@ import pandas as pd
 import talib
 
 class Strategy:
-    def __init__(self, symbol_point, configs, mt_buy_indicator, mt_sell_indicator):
+    def __init__(self, configs, mt_buy_indicator, mt_sell_indicator):
         self.SYMBOL = configs['SYMBOL']
-        self.SYMBOL_POINT = symbol_point
+        self.SYMBOL_POINT = 0
         self.DEFAULT_VOLUME = configs['DEFAULT_VOLUME']
         self.DEFAULT_VOLUME_MULTIPLIER = configs['DEFAULT_VOLUME_MULTIPLIER']
         self.MIN_PIPS_FROM_LAST_ORDER = configs['MIN_PIPS_FROM_LAST_ORDER']
@@ -81,6 +81,9 @@ class Strategy:
         is_sell = False
         order_sequence = 1
         volume = self.DEFAULT_VOLUME
+        
+        if self.SYMBOL_POINT == 0:
+            self.SYMBOL_POINT = mt.symbol_info(self.SYMBOL).point
 
         position_columns = ['ticket', 'time', 'time_msc', 'time_update', 'time_update_msc', 'type', 'magic',
                             'identifier',

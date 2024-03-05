@@ -1,11 +1,22 @@
 import MetaTrader5 as mt
 import pandas as pd
+from helper import *
+from algorithm import *
+import threading
 
 class TradeSession:
-    def __init__(self, symbol_point, configurations):
+    def __init__(self, account, configurations, installation):
+        self.account = account
+        self.installation = installation
         self.SYMBOL = configurations['SYMBOL']
-        self.SYMBOL_POINT = symbol_point
         self.MAGIC_NUMBER = configurations["MAGIC_NUMBER"]
+        self.configurations = configurations
+        
+        self.running = False
+        self.paused = False
+        self.thread = threading.Thread(target=self.run)
+        
+        self.SYMBOL_POINT = symbol_point
         self.TP_PIPS = configurations["DEFAULT_TP_PIPS"]
         self.ATR_THRESHOLD = configurations['ATR_THRESHOLD']
         self.ATR_APPLY = configurations['ATR_APPLY']
@@ -13,6 +24,7 @@ class TradeSession:
         self.ATR_VOLUME_MULTIPLIER = configurations['ATR_VOLUME_MULTIPLIER']
         self.ATR_TP_MULTIPLIER = configurations["ATR_TP_MULTIPLIER"]
 
+        self.strategy = Strategy(self.configurations, mt.POSITION_TYPE_BUY, mt.POSITION_TYPE_SELL)
 
     def modify_position(self, order_number, new_stop_loss, new_take_profit):
         # Create the request
@@ -27,8 +39,7 @@ class TradeSession:
             print(f"Order modified: {order_number}. New take profit price = {new_take_profit}")
         else:
             print(f"Order {order_number} failed to modify")
-    
-    
+
     def adjust_positions_tp(self, order_type, atr):
         positions = mt.positions_get(SYMBOL=self.SYMBOL)
     
@@ -56,8 +67,7 @@ class TradeSession:
     
         for index, row in open_positions.iterrows():
             self.modify_position(row.ticket, 0, new_tp)
-    
-    
+
     def send_order(self, trade):
         request = {
             "action": mt.TRADE_ACTION_DEAL,
@@ -80,3 +90,56 @@ class TradeSession:
         if result and result[0] == mt.TRADE_RETCODE_DONE:
             print(f"Order executed: {result[2]}")
             self.adjust_positions_tp(trade["action_type"], trade["atr"])
+
+    def start(self):
+        initialize = mt.initialize(self.installation)
+        if initialize:
+            print("MetaTrader initialized successfully.")
+        else:
+            print("MetaTrader initialized failed.")
+
+        if initialize:
+            LOGIN = self.account["LOGIN"]
+            SERVER = self.account["SERVER"]
+            PASSWORD = self.account["PASSWORD"]
+
+            login = mt.login(login=LOGIN, server=SERVER, password=PASSWORD)
+
+            if login:
+                print(f"Account: {LOGIN} logged on to Meta Trader successfully.")
+                print(f"Server = {SERVER}")
+
+            self.SYMBOL_POINT = mt.symbol_info(SYMBOL).point
+
+            load_economic_calendar()
+            self.running = True
+            self.thread.start()
+
+    def pause(self):
+        self.paused = True
+
+    def resume(self):
+        self.paused = False
+
+    def stop(self):
+        self.running = False
+
+    def run(self):
+        while self.running:
+            if not self.paused:
+                rates = mt.copy_rates_from_pos(SYMBOL, mt.TIMEFRAME_M1, 0, 1440)
+
+                df = pd.DataFrame.from_records(rates, columns=columns)
+                df['time'] = pd.to_datetime(df['time'], unit='s')
+                signals = strategy.generate_trade_signal(df)
+
+                last_signal = signals.iloc[-1]
+
+                result = strategy.process_signal(last_signal)
+
+                if result and result['start_new_trade']:
+                    self.session.send_order(result)
+
+                time.sleep(1)
+            else:
+                time.sleep(0.1)

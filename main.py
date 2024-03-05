@@ -97,33 +97,45 @@ class MartinApp():
             print("Auto trading stopped.")
 
     def run_auto_trading(self):
-        selected_installation = self.window['-INS-OPTIONS-'].get()
         selected_account_id = self.window['-ACCOUNT-OPTIONS-'].get()
+        selected_account = next((account for account in self.accounts
+                                 if account['LOGIN'] == selected_account_id), None)
 
-        initialize = mt.initialize(selected_installation)
-        if initialize:
-            print("MetaTrader initialized successfully.")
-        else:
-            print("MetaTrader initialized failed.")
-            self.running = False
-            self.window['-STARTSTOP-'].update("Start")
+        selected_profile_name = self.window['-PROFILE-OPTIONS-'].get()
+        selected_profile = next((profile for profile in self.profiles
+                                 if profile['NAME'] == selected_profile_name), None)
 
-        if initialize:
-            selected_account = next((account for account in self.accounts
-                                     if account['LOGIN'] == selected_account_id), None)
-
-            LOGIN = selected_account["LOGIN"]
-            SERVER = selected_account["SERVER"]
-            PASSWORD = selected_account["PASSWORD"]
-
-            login = mt.login(login=LOGIN, server=SERVER, password=PASSWORD)
-
-            if login:
-                print(f"Account: {LOGIN} logged on to Meta Trader successfully.")
-                print(f"Server = {SERVER}")
-
-            self.load_economic_calendar()
-            self.run_logic()
+        selected_installation = self.window['-INS-OPTIONS-'].get()
+        
+        session = TradeSession(selected_account, selected_profile, selected_installation)
+        session.start()
+        # selected_installation = self.window['-INS-OPTIONS-'].get()
+        # selected_account_id = self.window['-ACCOUNT-OPTIONS-'].get()
+        # 
+        # initialize = mt.initialize(selected_installation)
+        # if initialize:
+        #     print("MetaTrader initialized successfully.")
+        # else:
+        #     print("MetaTrader initialized failed.")
+        #     self.running = False
+        #     self.window['-STARTSTOP-'].update("Start")
+        # 
+        # if initialize:
+        #     selected_account = next((account for account in self.accounts
+        #                              if account['LOGIN'] == selected_account_id), None)
+        # 
+        #     LOGIN = selected_account["LOGIN"]
+        #     SERVER = selected_account["SERVER"]
+        #     PASSWORD = selected_account["PASSWORD"]
+        # 
+        #     login = mt.login(login=LOGIN, server=SERVER, password=PASSWORD)
+        # 
+        #     if login:
+        #         print(f"Account: {LOGIN} logged on to Meta Trader successfully.")
+        #         print(f"Server = {SERVER}")
+        # 
+        #     self.load_economic_calendar()
+        #     self.run_logic()
 
     def run_logic(self):
             columns = ['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume', 'Spread', 'Real Volume']
@@ -178,6 +190,7 @@ class MartinApp():
                 break
             elif event == '-STARTSTOP-':
                 self.start_stop()
+
 
 
 pd.set_option('display.max_columns', None)
