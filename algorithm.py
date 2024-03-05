@@ -76,7 +76,7 @@ class Strategy:
         return start_time
 
 
-    def process_signal(self, data):
+    def process_signal(self, data, important_dates):
         is_buy = False
         is_sell = False
         order_sequence = 1
@@ -96,10 +96,10 @@ class Strategy:
     
         # Check has important news based on imported economic calendar
         has_important_news = False
-        # for dates in IMPORTANT_DATES:
-        #     start, end = dates
-        #     data_time = data['time'].tz_localize('UTC')
-        #     has_important_news = has_important_news or (data_time >= start and data_time <= end)
+        for dates in important_dates:
+            start, end = dates
+            data_time = data['time'].tz_localize('UTC')
+            has_important_news = has_important_news or (data_time >= start and data_time <= end)
     
         is_max_trade_reached = False
 

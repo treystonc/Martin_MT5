@@ -47,43 +47,43 @@ class MartinApp():
         sg.theme("Reddit")
 
         self.running = False
-        self.process_thread = None
+        self.process_thread = []
 
-    def load_economic_calendar(self):
-        print("Loading economic calendar...")
-
-        url = 'https://economic-calendar.tradingview.com/events'
-
-        today = pd.Timestamp.today().normalize()
-        payload = {
-            'from': (today + pd.offsets.Hour(23)).isoformat() + '.000Z',
-            'to': (today + pd.offsets.Day(7) + pd.offsets.Hour(22)).isoformat() + '.000Z',
-            'countries': ','.join(['US', 'EU'])
-        }
-        response = requests.get(url, params=payload)
-        data = response.json()
-
-        selected_columns = ['title', 'country', 'indicator', 'category', 'period', 'importance', 'currency', 'date']
-        extracted_data = [{col: entry.get(col) for col in selected_columns} for entry in data.get('result', [])]
-        df_cal = pd.DataFrame(extracted_data)
-        # Define a list of keywords
-        keywords = ['Nonfarm Payrolls', 'Unemployment Rate', 'Interest Rate Decision', 'CPI', 'ADP']
-        # Create a regular expression pattern to match any of the keywords
-        pattern = '|'.join(keywords)
-        # Filter the DataFrame based on the pattern
-        filtered_df_cal = df_cal[df_cal['title'].str.contains(pattern, case=False, na=False, regex=True)]
-        unique_dates = filtered_df_cal['date'].unique()
-
-        important_dates = []
-        for date in unique_dates.tolist():
-            start = pd.Timestamp(date) - dt.timedelta(hours=12)
-            end = pd.Timestamp(date) + dt.timedelta(hours=4)
-            important_dates.append((start, end))
-
-        print("Economic calendar loaded completely.")
-        print(f"{len(important_dates)} dates identified.")
-
-        return important_dates
+    # def load_economic_calendar(self):
+    #     print("Loading economic calendar...")
+    #
+    #     url = 'https://economic-calendar.tradingview.com/events'
+    #
+    #     today = pd.Timestamp.today().normalize()
+    #     payload = {
+    #         'from': (today + pd.offsets.Hour(23)).isoformat() + '.000Z',
+    #         'to': (today + pd.offsets.Day(7) + pd.offsets.Hour(22)).isoformat() + '.000Z',
+    #         'countries': ','.join(['US', 'EU'])
+    #     }
+    #     response = requests.get(url, params=payload)
+    #     data = response.json()
+    #
+    #     selected_columns = ['title', 'country', 'indicator', 'category', 'period', 'importance', 'currency', 'date']
+    #     extracted_data = [{col: entry.get(col) for col in selected_columns} for entry in data.get('result', [])]
+    #     df_cal = pd.DataFrame(extracted_data)
+    #     # Define a list of keywords
+    #     keywords = ['Nonfarm Payrolls', 'Unemployment Rate', 'Interest Rate Decision', 'CPI', 'ADP']
+    #     # Create a regular expression pattern to match any of the keywords
+    #     pattern = '|'.join(keywords)
+    #     # Filter the DataFrame based on the pattern
+    #     filtered_df_cal = df_cal[df_cal['title'].str.contains(pattern, case=False, na=False, regex=True)]
+    #     unique_dates = filtered_df_cal['date'].unique()
+    #
+    #     important_dates = []
+    #     for date in unique_dates.tolist():
+    #         start = pd.Timestamp(date) - dt.timedelta(hours=12)
+    #         end = pd.Timestamp(date) + dt.timedelta(hours=4)
+    #         important_dates.append((start, end))
+    #
+    #     print("Economic calendar loaded completely.")
+    #     print(f"{len(important_dates)} dates identified.")
+    #
+    #     return important_dates
 
     def start_stop(self):
         if not self.running:
@@ -137,43 +137,43 @@ class MartinApp():
         #     self.load_economic_calendar()
         #     self.run_logic()
 
-    def run_logic(self):
-            columns = ['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume', 'Spread', 'Real Volume']
-
-            selected_profile_name = self.window['-PROFILE-OPTIONS-'].get()
-            selected_profile = next((profile for profile in self.profiles
-                                     if profile['NAME'] == selected_profile_name), None)
-
-            print(f"Loaded profile - {selected_profile_name}")
-            print("Profile configurations:")
-            print("-----------------------")
-            for key, value in selected_profile.items():
-                print(f"{key}: {value}")
-
-            SYMBOL = selected_profile["SYMBOL"]
-            POINT = mt.symbol_info(SYMBOL).point
-
-            # Generate trade signals
-            session = TradeSession(POINT, selected_profile)
-            strategy = Strategy(POINT, selected_profile, mt.POSITION_TYPE_BUY, mt.POSITION_TYPE_SELL)
-
-            print("Auto trading started.")
-
-            while self.running:
-                rates = mt.copy_rates_from_pos(SYMBOL, mt.TIMEFRAME_M1, 0, 1440)
-
-                df = pd.DataFrame.from_records(rates, columns=columns)
-                df['time'] = pd.to_datetime(df['time'], unit='s')
-                signals = strategy.generate_trade_signal(df)
-
-                last_signal = signals.iloc[-1]
-
-                result = strategy.process_signal(last_signal)
-
-                if result and result['start_new_trade']:
-                    session.send_order(result)
-
-                time.sleep(1)
+    # def run_logic(self):
+    #         columns = ['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume', 'Spread', 'Real Volume']
+    #
+    #         selected_profile_name = self.window['-PROFILE-OPTIONS-'].get()
+    #         selected_profile = next((profile for profile in self.profiles
+    #                                  if profile['NAME'] == selected_profile_name), None)
+    #
+    #         print(f"Loaded profile - {selected_profile_name}")
+    #         print("Profile configurations:")
+    #         print("-----------------------")
+    #         for key, value in selected_profile.items():
+    #             print(f"{key}: {value}")
+    #
+    #         SYMBOL = selected_profile["SYMBOL"]
+    #         POINT = mt.symbol_info(SYMBOL).point
+    #
+    #         # Generate trade signals
+    #         session = TradeSession(POINT, selected_profile)
+    #         strategy = Strategy(POINT, selected_profile, mt.POSITION_TYPE_BUY, mt.POSITION_TYPE_SELL)
+    #
+    #         print("Auto trading started.")
+    #
+    #         while self.running:
+    #             rates = mt.copy_rates_from_pos(SYMBOL, mt.TIMEFRAME_M1, 0, 1440)
+    #
+    #             df = pd.DataFrame.from_records(rates, columns=columns)
+    #             df['time'] = pd.to_datetime(df['time'], unit='s')
+    #             signals = strategy.generate_trade_signal(df)
+    #
+    #             last_signal = signals.iloc[-1]
+    #
+    #             result = strategy.process_signal(last_signal)
+    #
+    #             if result and result['start_new_trade']:
+    #                 session.send_order(result)
+    #
+    #             time.sleep(1)
 
     def on_close(self):
         self.running = False  # Stop the background process

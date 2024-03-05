@@ -1,5 +1,6 @@
 import MetaTrader5 as mt
 import pandas as pd
+import time
 from helper import *
 from algorithm import *
 import threading
@@ -16,7 +17,7 @@ class TradeSession:
         self.paused = False
         self.thread = threading.Thread(target=self.run)
         
-        self.SYMBOL_POINT = symbol_point
+        self.SYMBOL_POINT = 0
         self.TP_PIPS = configurations["DEFAULT_TP_PIPS"]
         self.ATR_THRESHOLD = configurations['ATR_THRESHOLD']
         self.ATR_APPLY = configurations['ATR_APPLY']
@@ -25,6 +26,7 @@ class TradeSession:
         self.ATR_TP_MULTIPLIER = configurations["ATR_TP_MULTIPLIER"]
 
         self.strategy = Strategy(self.configurations, mt.POSITION_TYPE_BUY, mt.POSITION_TYPE_SELL)
+        self.important_dates = []
 
     def modify_position(self, order_number, new_stop_loss, new_take_profit):
         # Create the request
@@ -109,9 +111,9 @@ class TradeSession:
                 print(f"Account: {LOGIN} logged on to Meta Trader successfully.")
                 print(f"Server = {SERVER}")
 
-            self.SYMBOL_POINT = mt.symbol_info(SYMBOL).point
+            self.SYMBOL_POINT = mt.symbol_info(self.SYMBOL).point
 
-            load_economic_calendar()
+            self.important_dates =  load_economic_calendar()
             self.running = True
             self.thread.start()
 
@@ -125,20 +127,22 @@ class TradeSession:
         self.running = False
 
     def run(self):
+        columns = ['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume', 'Spread', 'Real Volume']
+
         while self.running:
             if not self.paused:
-                rates = mt.copy_rates_from_pos(SYMBOL, mt.TIMEFRAME_M1, 0, 1440)
+                rates = mt.copy_rates_from_pos(self.SYMBOL, mt.TIMEFRAME_M1, 0, 1440)
 
                 df = pd.DataFrame.from_records(rates, columns=columns)
                 df['time'] = pd.to_datetime(df['time'], unit='s')
-                signals = strategy.generate_trade_signal(df)
+                signals = self.strategy.generate_trade_signal(df)
 
                 last_signal = signals.iloc[-1]
 
-                result = strategy.process_signal(last_signal)
+                result = self.strategy.process_signal(last_signal, self.important_dates)
 
                 if result and result['start_new_trade']:
-                    self.session.send_order(result)
+                    self.send_order(result)
 
                 time.sleep(1)
             else:
