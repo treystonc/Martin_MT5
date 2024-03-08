@@ -3,6 +3,7 @@ import MetaTrader5 as mt
 import pandas as pd
 import requests
 import json
+import pytz
 
 
 def load_economic_calendar():
@@ -12,7 +13,7 @@ def load_economic_calendar():
 
     today = pd.Timestamp.today().normalize()
     payload = {
-        'from': (today + pd.offsets.Hour(23)).isoformat() + '.000Z',
+        'from': (today + pd.offsets.Hour(1)).isoformat() + '.000Z',
         'to': (today + pd.offsets.Day(7) + pd.offsets.Hour(22)).isoformat() + '.000Z',
         'countries': ','.join(['US', 'EU'])
     }
@@ -32,8 +33,11 @@ def load_economic_calendar():
 
     important_dates = []
     for date in unique_dates.tolist():
-        start = pd.Timestamp(date) - dt.timedelta(hours=12)
-        end = pd.Timestamp(date) + dt.timedelta(hours=4)
+        timezone = pytz.timezone('Etc/GMT-2')  # UTC+2 timezone
+        converted_datetime = dt.datetime.strptime(date, '%Y-%m-%dT%H:%M:%S.%fZ').\
+            replace(tzinfo=pytz.utc).astimezone(timezone)
+        start = pd.Timestamp(converted_datetime) - dt.timedelta(hours=12)
+        end = pd.Timestamp(converted_datetime) + dt.timedelta(hours=4)
         important_dates.append((start, end))
 
     print("Economic calendar loaded completely.")
