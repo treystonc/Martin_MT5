@@ -4,6 +4,7 @@ import time
 from helper import *
 from algorithm import *
 import threading
+import logging
 
 class TradeSession:
     def __init__(self, account, configurations, installation):
@@ -12,10 +13,12 @@ class TradeSession:
         self.SYMBOL = configurations['SYMBOL']
         self.MAGIC_NUMBER = configurations["MAGIC_NUMBER"]
         self.configurations = configurations
+        self.key = str(account['LOGIN']) + " - " + configurations['SYMBOL'] + configurations['NAME']
         
         self.running = False
         self.paused = False
-        self.thread = threading.Thread(target=self.run)
+        self.thread = None
+        self.thread_started = False
         
         self.SYMBOL_POINT = 0
         self.TP_PIPS = configurations["DEFAULT_TP_PIPS"]
@@ -28,6 +31,9 @@ class TradeSession:
         self.strategy = Strategy(self.configurations, mt.POSITION_TYPE_BUY, mt.POSITION_TYPE_SELL)
         self.important_dates = []
 
+    def __str__(self):
+        return str(self.account['LOGIN']) + " - (" + self.SYMBOL + ") - " + self.configurations['NAME']
+
     def modify_position(self, order_number, new_stop_loss, new_take_profit):
         # Create the request
         request = {
@@ -38,9 +44,9 @@ class TradeSession:
     
         result = mt.order_send(request)
         if result[0] == mt.TRADE_RETCODE_DONE:
-            print(f"Order modified: {order_number}. New take profit price = {new_take_profit}")
+           print_with_timestamp(f"Order modified: {order_number}. New take profit price = {new_take_profit}")
         else:
-            print(f"Order {order_number} failed to modify")
+           print_with_timestamp(f"Order {order_number} failed to modify")
 
     def adjust_positions_tp(self, order_type, atr):
         positions = mt.positions_get(SYMBOL=self.SYMBOL)
@@ -86,19 +92,23 @@ class TradeSession:
     
         result = mt.order_send(request)
     
-        print(f'Order: {trade["action_type"]} Volume: {trade["volume"]} Price: {trade["open_price"]} TP: {trade["tp"]}'
-              f' Result: re{result[0]}')
+        print_with_timestamp(f'Order: {trade["action_type"]} Volume: {trade["volume"]}'
+                            f' Price: {trade["open_price"]} TP: {trade["tp"]}'
+                            f' Result: re{result[0]}')
     
         if result and result[0] == mt.TRADE_RETCODE_DONE:
-            print(f"Order executed: {result[2]}")
+            print_with_timestamp(f"Order executed: {result[2]}")
             self.adjust_positions_tp(trade["action_type"], trade["atr"])
 
     def start(self):
         initialize = mt.initialize(self.installation)
+        success = True
+        
         if initialize:
-            print("MetaTrader initialized successfully.")
+            print_with_timestamp("MetaTrader initialized successfully.")
         else:
-            print("MetaTrader initialized failed.")
+            print_with_timestamp("MetaTrader initialized failed.")
+            success = False
 
         if initialize:
             LOGIN = self.account["LOGIN"]
@@ -108,14 +118,23 @@ class TradeSession:
             login = mt.login(login=LOGIN, server=SERVER, password=PASSWORD)
 
             if login:
-                print(f"Account: {LOGIN} logged on to Meta Trader successfully.")
-                print(f"Server = {SERVER}")
+                print_with_timestamp(f"Account: {LOGIN} logged on to Meta Trader successfully.")
+                print_with_timestamp(f"Server = {SERVER}")        
 
-            self.SYMBOL_POINT = mt.symbol_info(self.SYMBOL).point
-
-            self.important_dates =  load_economic_calendar()
-            self.running = True
-            self.thread.start()
+                self.SYMBOL_POINT = mt.symbol_info(self.SYMBOL).point
+    
+                important_news = load_economic_calendar(self.SYMBOL)
+                self.important_dates = important_dates
+                self.running = True
+    
+                if not self.thread_started:
+                    self.thread = threading.Thread(target=self.run)
+                    self.thread.start()
+                    self.thread_started = True
+            else:
+                success = False
+                
+        return success
 
     def pause(self):
         self.paused = True
@@ -125,6 +144,9 @@ class TradeSession:
 
     def stop(self):
         self.running = False
+        self.thread.join()
+        self.thread_started = False
+        print_with_timestamp(f"Session for {self.key} has stopped.")
 
     def run(self):
         columns = ['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume', 'Spread', 'Real Volume']
