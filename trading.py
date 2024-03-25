@@ -49,8 +49,8 @@ class TradeSession:
            print_with_timestamp(f"Order {order_number} failed to modify")
 
     def adjust_positions_tp(self, order_type, atr):
-        positions = mt.positions_get(SYMBOL=self.SYMBOL)
-    
+        positions = mt.positions_get(symbol=self.SYMBOL)
+        symbol_info = mt.symbol_info(self.SYMBOL)
         position_columns = ['ticket', 'time', 'time_msc', 'time_update', 'time_update_msc', 'type', 'magic', 'identifier',
                             'reason', 'volume', 'price_open', 'sl', 'tp', 'price_current', 'swap', 'profit', 'symbol',
                             'comment', 'external_id']
@@ -63,8 +63,11 @@ class TradeSession:
             total_cost = (open_positions.price_open * open_positions.volume).sum()
             total_volume = (open_positions.volume).sum()
             average_cost = round(total_cost / total_volume, 5)
-    
-        adjust_value = self.TP_PIPS * self.SYMBOL_POINT
+
+        tp_tips = self.TP_PIPS
+        if tp_tips <= symbol_info.trade_stops_level:
+            tp_tips = symbol_info.trade_stops_leve
+        adjust_value = tp_tips * self.SYMBOL_POINT
         if self.ATR_APPLY:
             if atr >= self.ATR_THRESHOLD:
                 adjust_value = adjust_value * self.ATR_TP_MULTIPLIER
@@ -101,39 +104,19 @@ class TradeSession:
             self.adjust_positions_tp(trade["action_type"], trade["atr"])
 
     def start(self):
-        initialize = mt.initialize(self.installation)
         success = True
-        
-        if initialize:
-            print_with_timestamp("MetaTrader initialized successfully.")
+
+        self.SYMBOL_POINT = mt.symbol_info(self.SYMBOL).point
+
+        self.running = True
+
+        if not self.thread_started:
+            self.thread = threading.Thread(target=self.run)
+            self.thread.start()
+            self.thread_started = True
         else:
-            print_with_timestamp("MetaTrader initialized failed.")
             success = False
 
-        if initialize:
-            LOGIN = self.account["LOGIN"]
-            SERVER = self.account["SERVER"]
-            PASSWORD = self.account["PASSWORD"]
-
-            login = mt.login(login=LOGIN, server=SERVER, password=PASSWORD)
-
-            if login:
-                print_with_timestamp(f"Account: {LOGIN} logged on to Meta Trader successfully.")
-                print_with_timestamp(f"Server = {SERVER}")        
-
-                self.SYMBOL_POINT = mt.symbol_info(self.SYMBOL).point
-    
-                important_news = load_economic_calendar(self.SYMBOL)
-                self.important_dates = important_dates
-                self.running = True
-    
-                if not self.thread_started:
-                    self.thread = threading.Thread(target=self.run)
-                    self.thread.start()
-                    self.thread_started = True
-            else:
-                success = False
-                
         return success
 
     def pause(self):
@@ -153,6 +136,7 @@ class TradeSession:
 
         while self.running:
             if not self.paused:
+                sleep = 1
                 rates = mt.copy_rates_from_pos(self.SYMBOL, mt.TIMEFRAME_M1, 0, 1440)
 
                 df = pd.DataFrame.from_records(rates, columns=columns)
@@ -164,8 +148,10 @@ class TradeSession:
                 result = self.strategy.process_signal(last_signal, self.important_dates)
 
                 if result and result['start_new_trade']:
+                    # print(result)
                     self.send_order(result)
+                    sleep = 60
 
-                time.sleep(1)
+                time.sleep(sleep)
             else:
                 time.sleep(0.1)

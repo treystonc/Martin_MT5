@@ -25,6 +25,8 @@ class Strategy:
         self.ATR_MIN_PIPS_MULTIPLIER = configs['ATR_MIN_PIPS_MULTIPLIER']
         self.ATR_VOLUME_MULTIPLIER = configs['ATR_VOLUME_MULTIPLIER']
         self.MAX_SPREAD_ALLOWED = configs['MAX_SPREAD_ALLOWED']
+        self.AGGRESSIVE_MODE = configs['AGGRESSIVE_MODE']
+        self.MAX_TRADES = configs['MAX_TRADES']
 
 
     def generate_trade_signal(self, df):
@@ -47,17 +49,28 @@ class Strategy:
     
         # Generate trade signals
         signals = []
-        for i in range(len(df)):
-            if (df['RSI'][i] > 30 and
-                    all(df['RSI'][i] > df['RSI'][i - j] for j in range(1, self.RSI_BAR_TO_COMPARE)) and
-                    df['MA_SHORT'][i] >= df['MA_LONG'][i]):
-                signals.append('BUY')
-            elif (df['RSI'][i] < 70 and
-                  all(df['RSI'][i] < df['RSI'][i - j] for j in range(1, self.RSI_BAR_TO_COMPARE)) and
-                  df['MA_SHORT'][i] <= df['MA_LONG'][i]):
-                signals.append('SELL')
-            else:
-                signals.append('')
+        if not self.AGGRESSIVE_MODE:
+            for i in range(len(df)):
+                if (df['RSI'][i] > 30 and
+                        all(df['RSI'][i] > df['RSI'][i - j] for j in range(1, self.RSI_BAR_TO_COMPARE)) and
+                        df['MA_SHORT'][i] >= df['MA_LONG'][i]):
+                    signals.append('BUY')
+                elif (df['RSI'][i] < 70 and
+                      all(df['RSI'][i] < df['RSI'][i - j] for j in range(1, self.RSI_BAR_TO_COMPARE)) and
+                      df['MA_SHORT'][i] <= df['MA_LONG'][i]):
+                    signals.append('SELL')
+                else:
+                    signals.append('')
+        else:
+            for i in range(len(df)):
+                if (df['RSI'][i] > 30 and
+                        all(df['RSI'][i] > df['RSI'][i - j] for j in range(1, self.RSI_BAR_TO_COMPARE))):
+                    signals.append('BUY')
+                elif (df['RSI'][i] < 70 and
+                      all(df['RSI'][i] < df['RSI'][i - j] for j in range(1, self.RSI_BAR_TO_COMPARE))):
+                    signals.append('SELL')
+                else:
+                    signals.append('')
     
         df['Signal'] = signals
     
@@ -85,13 +98,14 @@ class Strategy:
         if self.SYMBOL_POINT == 0:
             self.SYMBOL_POINT = mt.symbol_info(self.SYMBOL).point
 
+        last_tick = mt.symbol_info_tick(self.SYMBOL)
+
         position_columns = ['ticket', 'time', 'time_msc', 'time_update', 'time_update_msc', 'type', 'magic',
                             'identifier',
                             'reason', 'volume', 'price_open', 'sl', 'tp', 'price_current', 'swap', 'profit', 'symbol',
                             'comment', 'external_id']
-    
-    
-        positions = mt.positions_get(SYMBOL=self.SYMBOL)
+
+        positions = mt.positions_get(symbol=self.SYMBOL)
         df_position = pd.DataFrame.from_records(positions, columns=position_columns)
     
         # Check has important news based on imported economic calendar
@@ -102,23 +116,26 @@ class Strategy:
             has_important_news = has_important_news or (data_time >= start and data_time <= end)
     
         is_max_trade_reached = False
-
+        number_of_open_positions = 0
+        open_price = data.close
         # First, collect all opened positions
         # If it has opened position:
         # Check if its last opened position's open price is X pips from the current price
         # Apply ATR factor (volatility) on the minimum pips gap and multiplier on the new trade volume
         if (data['Signal']) == "BUY":
             open_positions = df_position[df_position['type'] == self.MT5_BUY_INDICATOR]
-            has_no_position = len(open_positions) == 0
+            number_of_open_positions = len(open_positions)
+            has_no_position = number_of_open_positions == 0
             if not has_no_position:
                 last_position = open_positions.iloc[-1]
                 min_pips = self.MIN_PIPS_FROM_LAST_ORDER * self.SYMBOL_POINT
                 if self.ATR_APPLY and data.ATR >= self.ATR_THRESHOLD:
                     min_pips = data.ATR * self.ATR_MIN_PIPS_MULTIPLIER
-                is_buy = (last_position.price_open - min_pips) > data['close']
-                
+
+                is_buy = (last_position.price_open - min_pips) > last_tick.ask
+                open_price = last_tick.ask
                 volume_multiplier = self.DEFAULT_VOLUME_MULTIPLIER
-                if data.ATR >= self.ATR_THRESHOLD:
+                if self.ATR_APPLY and data.ATR >= self.ATR_THRESHOLD:
                     volume_multiplier = self.ATR_VOLUME_MULTIPLIER
                 volume = round(last_position.volume * volume_multiplier, 2)
             else:
@@ -126,15 +143,18 @@ class Strategy:
             order_sequence = len(open_positions) + 1
         elif (data['Signal']) == "SELL":
             open_positions = df_position[df_position['type'] == self.MT5_SELL_INDICATOR]
-            has_no_position = len(open_positions) == 0
+            number_of_open_positions = len(open_positions)
+            has_no_position = number_of_open_positions == 0
             if not has_no_position:
                 last_position = open_positions.iloc[-1]
                 min_pips = self.MIN_PIPS_FROM_LAST_ORDER * self.SYMBOL_POINT
                 if self.ATR_APPLY and data.ATR >= self.ATR_THRESHOLD:
                     min_pips = data.ATR * self.ATR_MIN_PIPS_MULTIPLIER
-                is_sell = (last_position.price_open + min_pips) < data['close']
+
+                is_sell = (last_position.price_open + min_pips) < last_tick.bid
+                open_price = last_tick.bid
                 volume_multiplier = self.DEFAULT_VOLUME_MULTIPLIER
-                if data.ATR >= self.ATR_THRESHOLD:
+                if self.ATR_APPLY and data.ATR >= self.ATR_THRESHOLD:
                     volume_multiplier = self.ATR_VOLUME_MULTIPLIER
                 volume = round(last_position.volume * volume_multiplier, 2)
             else:
@@ -145,8 +165,9 @@ class Strategy:
         tp = 0
         comment = ''
         action_type = 0
-        open_price = data.close
-        
+
+        is_max_trade_reached = number_of_open_positions > self.MAX_TRADES
+
         if not is_max_trade_reached and data.spread <= self.MAX_SPREAD_ALLOWED:
             if is_buy:
                 is_new_trade = True
@@ -172,5 +193,5 @@ class Strategy:
             "comment": comment,
             "atr": data.ATR
         }
-        
+
         return new_trade

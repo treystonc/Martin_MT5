@@ -38,8 +38,10 @@ class MartinApp():
         self.sessions = {}
         self.selected_account = None
         self.important_news = []
-        self.thread = threading.Thread(target=self.daemon_load_economic_calendar)
+        self.thread = threading.Thread(target=self.daemon_load_economic_calendar, daemon=True)
         self.running = False
+        self.MT5_initialized = False
+        self.MT5_Logon = False
 
         logins = [instance['LOGIN'] for instance in self.accounts.values()]
         profiles = [instance['NAME'] for instance in self.profiles.values()]
@@ -56,8 +58,9 @@ class MartinApp():
                       default_value=installations[0],
                       key="-INS-OPTIONS-")],
             [sg.Combo(logins, default_value=logins[0], enable_events=True, key="-ACCOUNT-OPTIONS-"),
-             sg.Button("CREATE", key="-CREATE-")],
-            [sg.Combo(profiles, default_value=profiles[0], enable_events=True, key="-PROFILE-OPTIONS-")],
+             sg.Button("ESTABLISH CONNECTION", key="-ESTABLISH-")],
+            [sg.Combo(profiles, default_value=profiles[0], enable_events=True, key="-PROFILE-OPTIONS-"),
+             sg.Button("CREATE SESSION", key="-CREATE-")],
         ]
 
         self.layout = [
@@ -68,9 +71,10 @@ class MartinApp():
              sg.Listbox({}, key="-NEWS-", size=(60,5))],
             [sg.Button("START", key="-STARTSTOP-", disabled=True),
              sg.Button("PAUSE", key="-PAUSE-", disabled=True),
-             sg.Button("CLEAR LOG", key="-CLEAR-")],
+             sg.Button("CLEAR LOG", key="-CLEAR-"),
+             sg.Button("REFRESH NEWS", key="-REFRESH_NEWS-"),],
             [sg.Text(text='', key="-STATUS-")],
-            [sg.Multiline(size=(100, 50), key="-LOGS-", autoscroll=True, reroute_stdout=True)]
+            [sg.Multiline(size=(100, 30), key="-LOGS-", autoscroll=True, reroute_stdout=True)]
         ]
 
         self.window = sg.Window("MARTIN App", self.layout)
@@ -84,14 +88,8 @@ class MartinApp():
         return selected_account_id, selected_profile_name
 
     def run_auto_trading(self):
-        account_id, profile_name = self.get_current_selections()
-
-        selected_account = self.accounts[account_id]
-        selected_profile = self.profiles[profile_name]
-
-        session_key = str(selected_account['LOGIN']) + " - " + selected_profile['SYMBOL'] + selected_profile['NAME']
+        session_key = self.window['-SESSIONS-'].get()[0]
         session = self.sessions.get(session_key)
-
 
         if session is None:
             installation_key = self.window['-INS-OPTIONS-'].get()
@@ -136,6 +134,7 @@ class MartinApp():
             self.sessions[session.key] = session
 
             self.update_news_dashboard(selected_profile['SYMBOL'])
+            self.get_news_for_session(session)
 
     def on_close(self):
         self.running = False
@@ -171,7 +170,7 @@ class MartinApp():
 
             elif event == '-SESSIONS-':
                 session_key = self.window["-SESSIONS-"].get()
-                if session_key is not None:
+                if len(session_key) > 0:
                     session = self.sessions[session_key[0]]
                     if session.running:
                         if session.paused:
@@ -210,8 +209,32 @@ class MartinApp():
             elif event == '-CLEAR-':
                 self.window['-LOGS-'].update('')
 
+            elif event == '-REFRESH_NEWS-':
+                symbols = []
+                for session in self.sessions.values():
+                    symbols.append(session.SYMBOL)
+
+                if len(symbols) > 0:
+                    self.important_news = load_economic_calendar(symbols)
+                    self.refresh_session_news()
+
+            elif event == '-ESTABLISH-':
+                if not self.MT5_initialized or not self.MT5_Logon:
+                    self.establish_mt5_connection()
+                else:
+                    mt.shutdown()
+                    self.MT5_initialized = False
+                    self.MT5_Logon = False
+                    self.sessions = None
+                    self.window['-INS-OPTIONS-'].update(disabled=False)
+                    self.window['-ACCOUNT-OPTIONS-'].update(disabled=False)
+                    self.window['-ESTABLISH-'].update('ESTABLISH CONNECTION')
+                    self.window['-SESSIONS-'].update([])
+
+
+
     def daemon_load_economic_calendar(self):
-        gap_counter = 60
+        gap_counter = 1440
         while self.running:
             if gap_counter == 60:
                 symbols = []
@@ -220,6 +243,7 @@ class MartinApp():
 
                 if len(symbols) > 0:
                     self.important_news = load_economic_calendar(symbols)
+                    self.refresh_session_news()
 
                 gap_counter = 0
 
@@ -238,6 +262,27 @@ class MartinApp():
         important_news = [instance for instance in self.important_news if instance[1] in countries ]
         return important_news
 
+    def get_news_for_session(self, session):
+        countries = []
+        if session.SYMBOL == "EURUSD":
+            countries.append('US')
+            countries.append('EU')
+        elif session.SYMBOL == "AUDCAD":
+            countries.append('AU')
+            countries.append('CA')
+
+        filtered_dates = [instance[2] for instance in self.important_news if instance[1] in countries ]
+        important_dates = []
+        unique_dates = set(filtered_dates)
+        for date in unique_dates:
+            timezone = pytz.timezone('Etc/GMT-2')  # UTC+2 timezone
+            converted_datetime = date.replace(tzinfo=pytz.utc).astimezone(timezone)
+            start = pd.Timestamp(converted_datetime) - dt.timedelta(hours=24)
+            end = pd.Timestamp(converted_datetime) + dt.timedelta(hours=4)
+            important_dates.append((start, end))
+
+        session.important_dates = important_dates
+
     def update_news_dashboard(self, symbol):
         important_news = self.get_news_for_symbol(symbol)
         formatted_dates = []
@@ -246,6 +291,40 @@ class MartinApp():
             formatted_dates.append(str(local_date) + " - " + news[1] + " - " +
                                    str(news[0]))
         self.window['-NEWS-'].update(values=formatted_dates)
+
+    def refresh_session_news(self):
+        for session in self.sessions.values():
+            self.get_news_for_session(session)
+
+    def establish_mt5_connection(self):
+        installation_key = self.window['-INS-OPTIONS-'].get()
+        installation = self.installations[installation_key]
+        initialize = mt.initialize(installation['PATH'])
+
+        if initialize:
+            print_with_timestamp("MetaTrader initialized successfully.")
+            self.MT5_initialized = True
+
+            account_id, profile_name = self.get_current_selections()
+            selected_account = self.accounts[account_id]
+
+            LOGIN = selected_account["LOGIN"]
+            SERVER = selected_account["SERVER"]
+            PASSWORD = selected_account["PASSWORD"]
+
+            login = mt.login(login=LOGIN, server=SERVER, password=PASSWORD)
+
+            if login:
+                print_with_timestamp(f"Account: {LOGIN} logged on to Meta Trader successfully.")
+                print_with_timestamp(f"Server = {SERVER}")
+                self.MT5_Logon = True
+
+                self.window['-ESTABLISH-'].update('SHUT DOWN')
+                self.window['-INS-OPTIONS-'].update(disabled=True)
+                self.window['-ACCOUNT-OPTIONS-'].update(disabled=True)
+        else:
+            print_with_timestamp("MetaTrader initialized failed.")
+            self.MT5_initialized = False
 
 
 pd.set_option('display.max_columns', None)

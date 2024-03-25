@@ -39,22 +39,11 @@ def load_economic_calendar(currencies):
     extracted_data = [{col: entry.get(col) for col in selected_columns} for entry in data.get('result', [])]
     df_cal = pd.DataFrame(extracted_data)
     # Define a list of keywords
-    keywords = ['Nonfarm Payrolls', 'Unemployment Rate', 'Interest Rate Decision', 'CPI', 'ADP']
+    keywords = ['Nonfarm Payrolls', 'Unemployment Rate', 'Interest Rate Decision', 'ADP', 'PCE Price Index MoM']
     # Create a regular expression pattern to match any of the keywords
     pattern = '|'.join(keywords)
     # Filter the DataFrame based on the pattern
     filtered_df_cal = df_cal[df_cal['title'].str.contains(pattern, case=False, na=False, regex=True)]
-
-    # important_dates = []
-    # unique_dates = filtered_df_cal['date'].unique()
-    # for date in unique_dates.tolist():
-    # 
-    #     timezone = pytz.timezone('Etc/GMT-2')  # UTC+2 timezone
-    #     converted_datetime = dt.datetime.strptime(date, '%Y-%m-%dT%H:%M:%S.%fZ').\
-    #         replace(tzinfo=pytz.utc).astimezone(timezone)
-    #     start = pd.Timestamp(converted_datetime) - dt.timedelta(hours=12)
-    #     end = pd.Timestamp(converted_datetime) + dt.timedelta(hours=4)
-    #     important_dates.append((start, end))
 
     important_news = []
     # if not load_dates_only:
