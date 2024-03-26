@@ -27,6 +27,7 @@ class TradeSession:
         self.ATR_MIN_PIPS_MULTIPLIER = configurations['ATR_MIN_PIPS_MULTIPLIER']
         self.ATR_VOLUME_MULTIPLIER = configurations['ATR_VOLUME_MULTIPLIER']
         self.ATR_TP_MULTIPLIER = configurations["ATR_TP_MULTIPLIER"]
+        self.AGGRESSIVE_MODE = configurations['AGGRESSIVE_MODE']
 
         self.strategy = Strategy(self.configurations, mt.POSITION_TYPE_BUY, mt.POSITION_TYPE_SELL)
         self.important_dates = []
@@ -150,7 +151,8 @@ class TradeSession:
                 if result and result['start_new_trade']:
                     # print(result)
                     self.send_order(result)
-                    sleep = 60
+                    if not self.AGGRESSIVE_MODE:
+                        sleep = 60
 
                 time.sleep(sleep)
             else:

@@ -39,11 +39,12 @@ def load_economic_calendar(currencies):
     extracted_data = [{col: entry.get(col) for col in selected_columns} for entry in data.get('result', [])]
     df_cal = pd.DataFrame(extracted_data)
     # Define a list of keywords
-    keywords = ['Nonfarm Payrolls', 'Unemployment Rate', 'Interest Rate Decision', 'ADP', 'PCE Price Index MoM']
+    keywords = ['Nonfarm Payrolls', 'Unemployment Rate', 'Interest Rate Decision', 'ADP', 'PCE Price Index', 'CPI']
     # Create a regular expression pattern to match any of the keywords
     pattern = '|'.join(keywords)
     # Filter the DataFrame based on the pattern
-    filtered_df_cal = df_cal[df_cal['title'].str.contains(pattern, case=False, na=False, regex=True)]
+    filtered_df_cal = df_cal[df_cal['title'].str.contains(pattern, case=False, na=False, regex=True) &
+                             df_cal['importance'] == 1]
 
     important_news = []
     # if not load_dates_only:
